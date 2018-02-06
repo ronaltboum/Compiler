@@ -1,0 +1,450 @@
+package slp;
+
+import java_cup.runtime.*;
+import java.util.ArrayList;
+import java.util.List; 
+import expr.BinaryOpExpr;
+import expr.BooleanExpr;
+import expr.CallExpr;
+import expr.Expr;
+import expr.LengthOfArray;
+import expr.LocationExpr;
+import expr.NewArrayExpr;
+import expr.NullExpr;
+import expr.NumberExpr;
+import expr.QuoteExpr;
+import expr.ThisObject;
+import expr.UnaryOpExpr;
+import expr.VarExpr;
+import expr.newObject;
+import stmt.AssignStmt;
+import stmt.BreakStmt;
+import stmt.CallStmt;
+import stmt.ContinueStmt;
+import stmt.IfStmt;
+import stmt.NestedStmtList;
+import stmt.ReturnStmt;
+import stmt.Stmt;
+import stmt.StmtList;
+import stmt.WhileStmt;
+
+parser code  {:
+	/** Causes the parsr to print every token it reads.
+	 * This is useful for debugging.
+	 */
+	public boolean printTokens;
+	private int LineNumber = 0;
+	
+	private Lexer lexer;
+
+	public Parser(Lexer lexer) {
+		super(lexer);
+		this.lexer = lexer;
+	}
+	
+	public int getLine()
+	{
+		return LineNumber;
+	}
+	
+	public void syntax_error(Symbol s) {
+		Token tok = (Token) s;
+		System.out.println("Line " + tok.getLine()+": Syntax error; unexpected " + tok);
+	}
+:}
+
+// This is just for debugging
+scan with {:
+	Token t = lexer.next_token();
+	LineNumber = t.getLine();
+	if (printTokens)
+		System.out.println(t.getLine() + ":" + t);
+	return t; 
+:};
+
+/**********************/
+/* TERMINALS (TOKENS) */
+/**********************/
+
+/**********************/
+/*      KEYWORDS 	  */
+/**********************/
+terminal BOOLEAN; // boolean
+terminal BREAK;   // break
+terminal CLASS;   // class
+terminal CONTINUE;
+terminal EXTENDS;
+terminal ELSE;
+terminal FALSE;
+terminal IF;
+terminal INT;
+terminal LENGTH;
+terminal NEW;
+terminal NULL;
+terminal RETURN;
+terminal STATIC;
+terminal THIS;
+terminal TRUE;
+terminal VOID;
+terminal WHILE;
+terminal STRING;
+
+/**********************/
+/*      BRACKETS 	  */
+/**********************/
+terminal LB; // [
+terminal LP; // (
+terminal LCBR; // {
+
+terminal RB; // ]
+terminal RP; // )
+terminal RCBR; // }
+
+/**********************/
+/*      OPERATORS	  */
+/**********************/
+terminal GT; 	 // >
+terminal LT; 	 // <
+terminal GTE; 	 // >=
+terminal LTE; 	 // <=
+terminal EQUAL;  // ==/
+terminal NEQUAL; // !=
+terminal LAND; 	 // &&
+terminal LNEG; 	 // !
+terminal LOR; 	 // ||
+terminal SEMI; 		//;
+terminal PLUS; 		// +
+terminal MULTIPLY; 	// *
+terminal DIVIDE; 	// /
+terminal ASSIGN; 	// =
+terminal COMMA; 	// ,
+terminal DOT; 		// .
+terminal MINUS; 	// -
+terminal MOD; 		// %
+
+/**********************/
+/* TERMINALS (TOKENS) */
+/**********************/
+terminal Integer	NUMBER;
+terminal String		ID;
+terminal String     CLASS_ID;
+terminal String     QUOTE;
+
+non terminal Program 		program;
+non terminal ClassDecl  	classDecl;
+non terminal ClassBody      classBody;
+non terminal ClassBodyList  classBodyList;
+non terminal Method	  	 	method;
+non terminal Field	  	 	field;
+
+non terminal IDList		    idList;
+non terminal Type           type;
+non terminal Formal         formal;
+non terminal FormalList		formalList;
+non terminal FuncArgsList   funcArgsList;
+non terminal CallExpr		callE;
+non terminal CallStmt	    callS;
+non terminal Expr 			expr;
+non terminal LocationExpr	location;
+non terminal Stmt 			stmt;
+non terminal StmtList 		stmt_list;
+
+
+
+precedence right ASSIGN;
+precedence left LOR;
+precedence left LAND;
+precedence left EQUAL, NEQUAL;
+precedence left GTE, LTE, GT, LT;
+precedence left PLUS, MINUS;
+precedence left DIVIDE, MULTIPLY, MOD;
+precedence right  MINUS,LNEG;
+precedence left RP, LP, RB, LB, DOT;
+precedence left IF,ELSE;
+// Always reduce a type before shifting to an ID
+
+precedence left INT;
+precedence left BOOLEAN;
+precedence left STRING;
+precedence left CLASS;
+precedence left ID; 
+
+
+program ::= classDecl:d
+	{: RESULT = new Program(d , d.CreationLine); :}
+	| program:p1 classDecl:d
+	{: p1.addDecl(d); RESULT = p1; :}
+;
+
+classBodyList ::= classBody:cb
+			{: 
+				RESULT = new ClassBodyList( cb, cb.CreationLine ); 
+			:}
+			| classBody:cb classBodyList:cbl
+			{: cbl.addClassBody( cb ); RESULT = cbl; :}
+			
+;
+
+classBody   ::= method:ml
+			{: RESULT = new ClassBody( ml , ml.CreationLine ); :}
+			| field:fl
+			{: RESULT = new ClassBody( fl , fl.CreationLine ); :}
+;
+
+classDecl	::= CLASS CLASS_ID:n LCBR classBodyList:cbl RCBR
+			{: RESULT = new ClassDecl( n, null, cbl , nleft ); :}
+			| CLASS CLASS_ID:n EXTENDS CLASS_ID:n1 LCBR classBodyList:cbl2 RCBR
+			{: RESULT = new ClassDecl( n, n1,  cbl2 , nleft ); :}
+			|  CLASS CLASS_ID:n LCBR  RCBR
+			{: RESULT = new ClassDecl( n, null,  nleft );:}
+			| CLASS CLASS_ID:n EXTENDS CLASS_ID:n1 LCBR RCBR
+			{: RESULT = new ClassDecl( n, n1,   nleft ); :}
+;
+		
+type        ::= INT 
+				{: RESULT = new Type( sym.INT, "int" , parser.getLine());:}
+				| BOOLEAN
+				{: RESULT = new Type( sym.BOOLEAN, "boolean" , parser.getLine()); :}
+				| STRING
+				{: RESULT = new Type( sym.STRING, "string" , parser.getLine()); :}		
+				| CLASS_ID:cid
+				{: RESULT = new Type( sym.CLASS_ID, cid , parser.getLine()); :}
+				//| type:t LB RB
+				//{: RESULT = new Type( 200, "array" , parser.getLine()); :}
+				| type:t LB RB
+				{:
+					if(t.arrayDimension==0)
+				  		RESULT = new Type( 200, "array" , t, parser.getLine()); 	
+				  	else{
+				  		t.increaseArrayDimension();
+				  		t.typeName = String.valueOf(t.arrayDimension) + " dimensional array of " + t.typeOfArray ;
+				  		RESULT = t;
+				  		} 
+				:}
+;
+
+
+
+
+
+idList      ::= COMMA ID:id idList:list
+			{: list.add( id ); RESULT = list; :}
+			| ID:id idList:list
+			{: list.add( id ); RESULT = list; :}
+			|
+			{: RESULT = new IDList( parser.getLine()); :}
+;
+				
+field		::= type:t2 ID:id idList:vl SEMI
+				{: vl.add(id); RESULT = new Field( t2.type, t2.typeName, vl , t2.CreationLine ); :}
+;
+
+
+formalList	::= formal:f formalList:f1 
+			{: f1.addFormal(f); RESULT = f1; :}
+| 			{: RESULT = new FormalList( parser.getLine()); :}
+; 
+
+
+
+formal		::= type:t ID:id COMMA
+			{: RESULT = new Formal( t, id , t.CreationLine); :}
+			| type:t ID:id 
+			{: RESULT = new Formal( t, id , t.CreationLine); :}
+;
+
+
+method     	::= STATIC type:t1 ID:func_id LP formalList:fl RP LCBR stmt_list:sl RCBR
+				{: RESULT = new Method( t1, func_id, fl,  false ,true , sl , t1.CreationLine); :}
+				| STATIC VOID ID:func_id LP formalList:fl RP LCBR stmt_list:sl RCBR
+				{: 
+				
+				RESULT = new Method( null, func_id, fl, true ,true, sl , fl.CreationLine); :}
+				| VOID ID:func_id LP formalList:fl RP  LCBR  stmt_list:sl RCBR
+				{: RESULT = new Method( null, func_id, fl, true ,false , sl , fl.CreationLine); :}
+				| type:t ID:func_id  LP formalList:fl RP LCBR  stmt_list:sl RCBR
+				{: RESULT = new Method( t, func_id, fl, false ,false, sl , t.CreationLine); :}
+;  
+
+location  ::= ID:v
+	{: RESULT = new LocationExpr(v, parser.getLine()); :}	
+	| 	expr:e DOT ID:v
+	{: RESULT = new LocationExpr(e,v, e.CreationLine); :}
+	| 	expr:e1 LB expr:e2 RB
+	{: RESULT = new LocationExpr(e1,e2, e1.CreationLine); :}
+	
+	
+;
+	
+stmt_list ::= 
+	{: RESULT = new StmtList( parser.getLine());
+	
+	 :}
+	| stmt:s stmt_list:sl 
+	{: sl.addStmt(s); RESULT = sl;
+	
+	 :}
+
+;
+
+stmt ::= callS:c SEMI
+	{: RESULT = c; :}
+	| type:t ID:v ASSIGN expr:e SEMI
+	{: 
+		
+		VarExpr ve = new VarExpr(v,t, t.CreationLine); 
+		RESULT = new AssignStmt(ve, e, t.CreationLine); 
+	:}
+	| type:t ID:v SEMI
+	{: 
+		VarExpr ve  = new VarExpr(v,t, t.CreationLine); 
+		RESULT = new AssignStmt(ve, t.CreationLine ); 
+		
+	:}
+	| location:L ASSIGN expr:e SEMI
+	{: RESULT = new AssignStmt(L,e, e.CreationLine); :}
+	
+	| RETURN expr:e SEMI
+	{: RESULT = new ReturnStmt(e, e.CreationLine); :}
+	
+	|  RETURN SEMI
+	{: RESULT = new ReturnStmt( parser.getLine()); :}
+	
+	| IF LP expr:e RP stmt:s1 ELSE stmt:s2 
+	{: RESULT = new IfStmt(e,s1,s2, e.CreationLine); :}
+	
+	| IF LP expr:e RP stmt:s1
+	{: RESULT = new IfStmt(e,s1, e.CreationLine); :}
+
+	| WHILE LP expr:e RP stmt:s 
+	{: RESULT = new WhileStmt(e,s, e.CreationLine); :}
+	
+	| BREAK SEMI
+	{: RESULT = new BreakStmt( parser.getLine()); :}
+	
+	| CONTINUE SEMI
+	{: RESULT = new ContinueStmt( parser.getLine()); :}
+	
+	| LCBR stmt_list:sl RCBR
+	{: RESULT = new NestedStmtList(sl, sl.CreationLine ); :}  //TODO
+;
+
+funcArgsList ::= COMMA expr:e funcArgsList:fl
+			{: fl.addExpr(e); RESULT = fl; :}
+			|
+			{: RESULT = new FuncArgsList( parser.getLine()); :}
+;
+
+callS ::= CLASS_ID:ci DOT ID:funcName LP expr:e funcArgsList:fal	RP 
+	{: 
+		fal.addExpr(e); 
+		RESULT = new CallStmt(null, funcName, fal, true , ci , e.CreationLine); 
+	:} // Static call
+	
+	|  expr:e DOT ID:funcName LP expr:e2 funcArgsList:fal	RP 
+	{: 
+		fal.addExpr(e2); 
+		RESULT = new CallStmt(e,funcName, fal, false, null , e.CreationLine); 
+	:} // virtual call
+	|  ID:funcName LP expr:e funcArgsList:fal	RP  
+	{: 
+		fal.addExpr(e); 
+		RESULT = new CallStmt(null,funcName,fal, false , null, e.CreationLine); 
+	:} // virtual call
+	
+	| CLASS_ID:ci DOT ID:funcName LP RP 
+	{: RESULT = new CallStmt(null,funcName,null , true , ci , parser.getLine() ); :} // static call
+	|  expr:e DOT ID:funcName LP RP 
+	
+	{: RESULT = new CallStmt(e,funcName, null , false , null , e.CreationLine); :} // virtual call
+	
+	|  ID:funcName LP RP 
+	{: RESULT = new CallStmt(null,funcName,null , false , null , parser.getLine() ); :} // virtual call
+;
+
+callE ::= CLASS_ID:ci DOT ID:funcName LP expr:e funcArgsList:fal	RP 
+	{: 
+		fal.addExpr(e); 
+		RESULT = new CallExpr(null,funcName,fal, true, ci , e.CreationLine ); 
+	:} // Static call
+	
+	|  expr:e DOT ID:funcName LP expr:e2 funcArgsList:fal	RP 
+	{: 
+		//System.out.println("HERE callE virtual");
+		fal.addExpr(e2); 
+		
+		RESULT = new CallExpr(e,funcName, fal, false , null, e.CreationLine); 
+	:} // virtual call
+	
+	|  ID:funcName LP expr:e funcArgsList:fal	RP  
+	{: 
+		fal.addExpr(e); 
+		RESULT = new CallExpr(null,funcName,fal, false , null , e.CreationLine ); 
+	:} // virtual call
+	
+	| CLASS_ID:ci DOT ID:funcName LP RP 
+	{: RESULT = new CallExpr(null,funcName,null , true , ci , parser.getLine()); :} // static call
+	
+	|  expr:e DOT ID:funcName LP RP 
+	{: RESULT = new CallExpr(e,funcName, null , false , null , e.CreationLine ); :} // virtual call
+	
+	|  ID:funcName LP RP 
+	{: RESULT = new CallExpr(null,funcName,null , false , null , parser.getLine()); :} // virtual call
+;
+
+expr ::=  location:l1
+		{: RESULT = l1; :} 
+		| callE: c
+		{:  RESULT = c; :}
+		| THIS:th
+		{: RESULT = new ThisObject( parser.getLine()); :}
+		| NEW CLASS_ID:n LP RP
+		{: RESULT = new newObject(n, parser.getLine()); :}
+		| NEW type:t LB expr:e1 RB // | type:t LB RB     new int[1][1]
+		{: 
+		RESULT = new NewArrayExpr(t,e1, t.CreationLine ); :}
+		| expr:e1 DOT LENGTH
+		{: RESULT = new LengthOfArray(e1, e1.CreationLine ); :}
+		| expr:e1 PLUS expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.PLUS, e1.CreationLine); :}
+		| expr:e1 MINUS expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.MINUS, e1.CreationLine);:}
+		| expr:e1 MULTIPLY expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.MULT, e1.CreationLine);:}
+		| expr:e1 DIVIDE expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.DIV, e1.CreationLine);:}
+		| expr:e1 MOD expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.MOD, e1.CreationLine); :} 
+		| expr:e1 LAND expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.LAND, e1.CreationLine);:}
+		| expr:e1 LOR expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.LOR, e1.CreationLine); :}
+		| expr:e1 LT expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.LT, e1.CreationLine);:}
+		| expr:e1 LTE expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.LTE, e1.CreationLine);:}
+		| expr:e1 GT expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.GT, e1.CreationLine); :}
+		| expr:e1 GTE expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.GTE, e1.CreationLine); :}
+		| expr:e1 EQUAL expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.EQUAL, e1.CreationLine);:}
+		| expr:e1 NEQUAL expr:e2
+		{: RESULT = new BinaryOpExpr(e1, e2, Operator.NEQUAL, e1.CreationLine);:}    
+		| LNEG expr:e1
+		{: RESULT = new UnaryOpExpr(e1, Operator.LNEG, e1.CreationLine);:}
+		| MINUS expr:e1
+		{: RESULT = new UnaryOpExpr(e1, Operator.MINUS, e1.CreationLine);:}
+		| NUMBER:n
+		{: RESULT = new NumberExpr(n.intValue(), parser.getLine()); :}
+		| QUOTE:q
+		{: RESULT = new QuoteExpr(q, parser.getLine()); :}  //should change
+		| TRUE:t
+		{: RESULT = new BooleanExpr(true, parser.getLine()); :}
+		| FALSE:f
+		{: RESULT = new BooleanExpr(false, parser.getLine()); :}
+		| NULL:n1
+		{: RESULT = new NullExpr(null, parser.getLine()); :} 
+		| LP expr:e RP
+		{: RESULT = e; :}
+;
